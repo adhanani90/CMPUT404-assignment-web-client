@@ -18,6 +18,7 @@
 # Write your own HTTP GET and POST
 # The point is to understand what you have to send and get experience with it
 
+
 import sys
 import socket
 import re
@@ -28,9 +29,10 @@ def help():
     print("httpclient.py [GET/POST] [URL]\n")
 
 class HTTPResponse(object):
-    def __init__(self, code=200, body=""):
+    def __init__(self, code=200, body="", headers=None):
         self.code = code
         self.body = body
+        self.headers = headers
 
 class HTTPClient(object):
     #def get_host_port(self,url):
@@ -41,16 +43,33 @@ class HTTPClient(object):
         return None
 
     def get_code(self, data):
+        for lines in data:
+            if lines.startswith("HTTP/1.1"):
+                return int(lines.split(" ")[1])
         return None
 
     def get_headers(self,data):
-        return None
-
+        headers = {}
+        for lines in data:
+            if lines.startswith("<!doctype"):
+                continue
+            else:
+                divided_line = lines.split(":")
+                if len(divided_line) < 2:
+                    continue
+                header_name = divided_line[0]
+                header_content = divided_line[1]
+                headers[header_name] = header_content
+        return headers
+                
     def get_body(self, data):
-        return None
+        for lines in data:
+            if lines.startswith("<!doctype"):
+                return lines
     
     def sendall(self, data):
         self.socket.sendall(data.encode('utf-8'))
+
         
     def close(self):
         self.socket.close()
@@ -68,14 +87,46 @@ class HTTPClient(object):
         return buffer.decode('utf-8')
 
     def GET(self, url, args=None):
+        try:
+            self.connect( url, 80 )
+        except:
+            return HTTPResponse(404, "404 Not Found")
+        
+        request = "GET / HTTP/1.1\r\nHost:"+url+"\r\n\r\n"
+        self.sendall(request)
+        self.socket.shutdown(socket.SHUT_WR)
+        message = self.recvall(self.socket)
         code = 500
-        body = ""
-        return HTTPResponse(code, body)
+        list_of_lines = message.split("\r\n")                
+        code = self.get_code(list_of_lines)
+        headers = self.get_headers(list_of_lines)
+        body = self.get_body(list_of_lines)          
+        return HTTPResponse(code, headers, body)
 
     def POST(self, url, args=None):
+        try:
+            split_url = url.split("?")
+            path = split_url[0]
+            args = split_url[1]
+        except:
+            return HTTPResponse(422, "Unprocessable Entity")
+            
+        try:
+            self.connect( path, 80 )
+        except:
+            return HTTPResponse(404, "404 Not Found")
+        
+        request = "POST / HTTP/1.1\r\nHost:"+url+"Content-Type: application/x-www-form-urlencoded\r\nContent-Length: "+str(len(args))+"\r\n\r\n"+args+"\r\n\r\n"
+        self.sendall(request)
+        self.socket.shutdown(socket.SHUT_WR)
+        message = self.recvall(self.socket)
         code = 500
-        body = ""
-        return HTTPResponse(code, body)
+        list_of_lines = message.split("\r\n")    
+        print(list_of_lines)            
+        code = self.get_code(list_of_lines)
+        headers = self.get_headers(list_of_lines)
+        body = self.get_body(list_of_lines)          
+        return HTTPResponse(code, headers, body)
 
     def command(self, url, command="GET", args=None):
         if (command == "POST"):
